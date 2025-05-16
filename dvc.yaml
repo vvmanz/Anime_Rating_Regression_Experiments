@@ -1,0 +1,8 @@
+stages:
+  train_tree:
+    cmd: python catboost_learning.py df.csv catboost_optuna.pkl
+    deps:
+    - df.csv
+    - catboost_learning.py
+    outs:
+    - catboost_optuna.pkl

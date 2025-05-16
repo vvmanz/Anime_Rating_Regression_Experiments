@@ -1,0 +1,18 @@
+schema: '2.0'
+stages:
+  train_tree:
+    cmd: python catboost_learning.py df.csv catboost_optuna.pkl
+    deps:
+    - path: catboost_learning.py
+      hash: md5
+      md5: d5edb49b9aca7e89a214900ebc700674
+      size: 2698
+    - path: df.csv
+      hash: md5
+      md5: 36e3ed5099f52409e98536422dda3579
+      size: 672935962
+    outs:
+    - path: catboost_optuna.pkl
+      hash: md5
+      md5: 43bcf77440db998b8811a3ae78e4ebeb
+      size: 23494
