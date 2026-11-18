@@ -1,4 +1,4 @@
-# dvc
+# Anime Rating Regression Experiments
 
 **Predicting the average rating of an anime from its genres, type, number of episodes and popularity: five regression models compared on a multi-gigabyte table, with DVC for the data and the training stage.**
 
