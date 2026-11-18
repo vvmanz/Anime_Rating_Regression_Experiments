@@ -1,90 +1,104 @@
-# dvc — Anime Rating Regression Experiments
+# dvc
 
-**A comparison of regression models for anime rating prediction, with Optuna tuning, feature analysis and an experimental DVC pipeline.**
+**Predicting the average rating of an anime from its genres, type, number of episodes and popularity: five regression models compared on a multi-gigabyte table, with DVC for the data and the training stage.**
 
 English | [Русский](README.ru.md)
 
-This research/coursework repository explores supervised regression on an anime ratings dataset. It combines feature preparation, several model families, hyperparameter optimization, diagnostic plots and data/model versioning experiments with DVC.
+![CatBoost feature importances](docs/catboost_importance.png)
 
-![Prediction comparison](plot_y_vs_y_pred_comparison.png)
+A study project on tabular regression and data versioning. User ratings (`rating.csv`) are joined with the anime
+catalogue (`anime.csv`: `anime_id, name, genre, type, episodes, rating, members`), genres are one-hot encoded, the title
+length is added as a feature, and the target is the average rating of the title (`rating_y`). Linear regression, a
+decision tree, CatBoost, XGBoost and an MLP are tuned with Optuna, saved as `.pkl` files and compared on the same table
+by MSE, MAE and R². The big table and the CatBoost training stage are tracked with DVC, so a model can be reproduced
+from a commit.
 
-## What's inside
+## Features
 
-- **Regression baselines:** linear/ridge regression and decision-tree regression.
-- **Ensemble models:** CatBoost and XGBoost regressors.
-- **Neural-network baseline:** scikit-learn `MLPRegressor`.
-- **Hyperparameter search** with Optuna; metrics include MAE, MSE, RMSE and R².
-- **Interpretation and comparison:** feature importance, fitted-vs-actual plots and weight/parameter visualizations.
-- **DVC experiment files:** `dvc.yaml`, `dvc.lock` and a tracked CSV declaration.
+* **Feature pipeline** (`ML.py`): merge of ratings and catalogue, multi-label one-hot encoding of genres
+  (`MultiLabelBinarizer`), dummies for the title type, number of words in the title, `episodes` and `members`.
+* **Five models**, each in its own script with an Optuna search: `linear_regression.py`, `tree.py`
+  (50 trials, depth 3–6), `catboost_learning.py`, `xgboost_learning.py`, `neural_network.py` (`MLPRegressor` with a
+  searched architecture).
+* **Side-by-side comparison** (`final_comparison.py`): loads the five saved models, prints MSE / MAE / R², draws
+  predicted-vs-true plots, linear weights, the first nodes of the tree and feature importances.
+* **Explainability artefacts**: `catboost_feature_importance.csv`, `xgboost_feature_importance.png`,
+  `linear_regression_results.txt` (weights per feature), MLP weight and bias plots per layer.
+* **DVC**: a `train_tree` stage in `dvc.yaml` (the CatBoost run: `df.csv` + `catboost_learning.py` → `catboost_optuna.pkl`)
+  with a lock file, and `df_final_for_lr_cleaned.csv.dvc` for the ~3.8 GB cleaned table.
 
-This is a **rating regression** study, not a complete user-facing recommendation service.
+In the CatBoost model the strongest features are `members` and `episodes` (importance ≈ 41 and ≈ 15), then single
+genres (Drama, Ecchi, Shounen) and the TV type; the figure above is drawn from `catboost_feature_importance.csv`.
+The other plots (predicted vs true, error histogram, linear weights, MLP layers) are produced by `final_comparison.py`
+and the training scripts and are kept in the repository root.
 
 ## Requirements
 
-Python 3.10+ recommended, with `numpy`, `pandas`, `scikit-learn`, `matplotlib`, `seaborn`, `optuna`, `catboost`, `xgboost`, `joblib`, and optionally `dvc` / Jupyter for the notebook workflow.
+* Python ≥ 3.10;
+* pandas, numpy, scikit-learn, CatBoost, XGBoost, Optuna, joblib, matplotlib, seaborn;
+* [DVC](https://dvc.org) if you want to pull or reproduce the tracked data and stage;
+* the raw tables: `anime.csv` is in the repository, `rating.csv` (user ratings of the same public anime dataset) is not,
+  and neither are the derived `df*.csv` files (hundreds of MB to several GB).
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install numpy pandas scikit-learn matplotlib seaborn optuna catboost xgboost joblib dvc jupyter
+pip install pandas numpy scikit-learn catboost xgboost optuna joblib matplotlib seaborn "dvc"
 ```
 
-## Data setup — read before running
-
-**This snapshot is not fully reproducible out of the box.** It contains `anime.csv`, several processed `Y_*.csv` files, notebooks, fitted models and plots, but some scripts require CSV files **not present** in the supplied archive:
-
-- `df_final_for_lr.csv` — referenced by `linear_regression.py`, `neural_network.py` and `final_comparison.py`.
-- `df_final_for_lr_cleaned.csv` — referenced by `catboost_learning.py`; a `.dvc` tracking file exists but the data itself is not included.
-- `df.csv` — referenced in `dvc.yaml`, which does **not** match the CatBoost script's hard-coded data path.
-- `rating.csv` — referenced by `ML.py` during the original preprocessing experiment.
-
-Restore or recreate these inputs before training. The current `dvc.yaml` command and file dependencies also need to be reconciled before `dvc repro` can succeed. Do not interpret the example commands below as guaranteed executable against the snapshot alone.
-
-## Example workflow
-
-Once `df_final_for_lr_cleaned.csv` is available in the project root:
+## Quick start
 
 ```bash
+git clone https://github.com/<your-account>/dvc.git && cd dvc
+
+# 1. put rating.csv next to anime.csv and build the features
+python ML.py                       # writes X_cleaned.csv and Y_cleaned.csv
+
+# 2. train a model (each script reads its table, runs Optuna, saves a .pkl)
+python tree.py
 python catboost_learning.py
-```
-
-When the corresponding `df_final_for_lr.csv` and required model artifacts are available:
-
-```bash
-python linear_regression.py
+python xgboost_learning.py
 python neural_network.py
+python linear_regression.py
+
+# 3. compare all five
 python final_comparison.py
 ```
 
-`final_comparison.py` loads **five pretrained model files**, including `decision_tree_optuna.pkl`, which is absent from this snapshot. Generate or restore missing files before using it. Several training scripts produce interactive Matplotlib figures and save model `.pkl` artifacts locally.
+The training scripts read the final feature table under the names used in the code (`df_final_for_lr.csv`,
+`df_final_for_lr_cleaned.csv`, `df.csv`). No script in the repository writes `df_final_for_lr.csv` from
+`X_cleaned.csv` / `Y_cleaned.csv` (the target column is called `rating_y`), so assemble it yourself, or change the file
+names at the top of a script.
 
-## Results and interpretation
+### Reproducing the DVC stage
 
-| Artifact | What it shows |
-|---|---|
-| [`plot_y_vs_y_pred_comparison.png`](plot_y_vs_y_pred_comparison.png) | Predicted vs. actual ratings for comparison |
-| [`plot_feature_weights.png`](plot_feature_weights.png) | Feature contribution visualization |
-| [`xgboost_feature_importance.png`](xgboost_feature_importance.png) | XGBoost feature importance |
-| [`linear_regression_results.txt`](linear_regression_results.txt) | Stored linear-regression results |
+```bash
+dvc repro                          # runs: python catboost_learning.py df.csv catboost_optuna.pkl
+dvc dag
+```
 
-Graphs are saved outputs from the archived experiments. Recalculate metrics on a known split before using them as validated performance claims.
+> The DVC remote in `.dvc/config` points to a local disk (`E:/dvc_storage`). To pull the data on another machine, add
+> your own remote first: `dvc remote add -d storage <path-or-url>` and `dvc push` / `dvc pull`.
 
 ## Repository layout
 
-```text
-ML.py, *.ipynb                preprocessing and exploratory notebooks
-linear_regression.py          Ridge + Optuna
-catboost_learning.py          CatBoost + Optuna
-xgboost_learning.py           XGBoost + Optuna
-neural_network.py             MLP regression + Optuna
-tree.py                       decision-tree regression
-final_comparison.py           model metrics and visualizations
-*.png, *.pkl                  experiment plots and model artifacts
-dvc.yaml, dvc.lock, .dvc/     experimental DVC configuration
+```
+ML.py                         feature pipeline: ratings + anime → X, Y
+linear_regression.py          linear model (+ Optuna), linear_regression_testing.py
+tree.py, tree_testing.py      decision tree (Optuna, MAE)
+catboost_learning.py          CatBoost (Optuna)           ← DVC stage train_tree
+xgboost_learning.py           XGBoost (Optuna)
+neural_network.py             MLPRegressor (Optuna, searched layers)
+final_comparison.py           MSE / MAE / R² for all models, comparison plots
+corellation_matrix.py         correlation matrix of the table
+new_csv.py                    cleaning of df_final_for_lr.csv → df_final_for_lr_cleaned.csv
+dvc.yaml, dvc.lock            pipeline
+df_final_for_lr_cleaned.csv.dvc   tracked table
+*.pkl                         trained models and the scaler
+*.png, *.csv, *.txt           plots, importances, weights
 ```
 
-## Limitations
+## Notes
 
-- Different scripts use different train/test splits and some evaluate on training data; numbers are **not automatically comparable**.
-- The DVC metadata and available file names are inconsistent, as noted above.
-- The supplied archive does not include a top-level licence file.
+* `rating_y` is a property of the title, while the table has one row per user rating, so the same title appears many
+  times with identical features. A random train/test split therefore puts copies of a title on both sides; for a strict
+  estimate split by `anime_id`.
+* Feature importance is computed on the fitted models and is not a causal statement about what makes an anime popular.
